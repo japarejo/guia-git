@@ -1,0 +1,145 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Las tres zonas de Git · Git y GitHub</title><link rel="stylesheet" href="common.css">
+<style>
+.zones{display:grid;grid-template-columns:1fr 1fr 1.1fr;gap:18px;margin-top:6px}
+.zone{border-radius:18px;padding:18px 18px 22px;min-height:360px;position:relative}
+.zone h2{font-family:'League Spartan',sans-serif;font-size:28px;margin:2px 0 4px}
+.zone .hint{font-size:14px;color:#5B6B8C;margin-bottom:14px;min-height:36px}
+.z1{background:#EEF2F9}.z2{background:#E1EAF7}.z3{background:#1A375E;color:#fff}.z3 .hint{color:#C9D6EE}.z3 .label{color:#E1EAF7}
+.chip{display:flex;align-items:center;gap:10px;background:#fff;border:2px solid #C9D6EE;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-family:var(--mono);font-size:16px;font-weight:600;cursor:pointer;user-select:none;will-change:transform;color:var(--navy)}
+.chip:hover{border-color:var(--accent)}
+.chip .st{min-width:34px;text-align:center;border-radius:8px;padding:2px 6px;font-size:13px;color:#fff;background:#9AA8C7}
+.chip.mod .st{background:var(--warn)}.chip.new .st{background:var(--danger)}.chip.stg .st{background:var(--ok)}
+.chip.clean{opacity:.55;cursor:default}
+.chip .act{margin-left:auto;font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;color:var(--accent);opacity:0;transition:opacity .2s}
+.chip:hover .act{opacity:1}
+.chip .rs{margin-left:6px;font-family:Montserrat,sans-serif;font-size:12px;color:#5B6B8C;border:1px solid #C9D6EE;border-radius:999px;padding:1px 8px}
+.chip .rs:hover{background:#5B6B8C;color:#fff}
+.commit{background:#22477A;border-radius:12px;padding:10px 14px;margin-bottom:10px;animation:pop .5s ease}
+.commit .h{font-family:var(--mono);color:#9FC0FF;font-size:14px}.commit .m{font-weight:700;margin:2px 0}.commit .f{font-family:var(--mono);font-size:13px;color:#C9D6EE}
+.commit.old{opacity:.6;animation:none}
+.flow{display:flex;gap:10px;align-items:center;justify-content:center;font-family:var(--mono);font-weight:600;color:var(--accent);font-size:15px;margin:2px 0 10px}
+</style></head><body>
+<header><div><h1>Las tres zonas de Git</h1><p>Un cambio pasa por el directorio de trabajo y el área de preparación antes de llegar al historial</p><div class="bar"></div></div><span class="tag">Bloque 03 · Commits</span></header>
+<main>
+<div class="controls">
+  <button id="eGuia">Editar <code>guia.md</code></button>
+  <button id="eReadme">Editar <code>README.md</code></button>
+  <button id="eNew">Crear <code>participantes/ana.md</code></button>
+  <button class="primary" id="bAdd"><code>git add .</code></button>
+  <input type="text" id="msg" value="Añade la ficha de Ana" size="22" aria-label="Mensaje del commit">
+  <button class="primary" id="bCommit"><code>git commit -m</code></button>
+  <span style="flex:1"></span>
+  <button class="ghost" id="bDemo">▶ Demo guiada</button>
+  <button class="ghost" id="bReset">Reiniciar</button>
+</div>
+<div class="flow"><span>Directorio de trabajo</span> ── git add ──▶ <span>Área de preparación</span> ── git commit ──▶ <span>Repositorio (.git)</span></div>
+<div class="zones">
+  <div class="zone z1"><div class="label">Zona 1</div><h2>Directorio de trabajo</h2><div class="hint">Haz clic en un archivo cambiado para hacer <b>git add</b>. «restore» descarta el cambio.</div><div id="wd"></div></div>
+  <div class="zone z2"><div class="label">Zona 2</div><h2>Área de preparación</h2><div class="hint">Lo que entrará en el próximo commit. Clic para <b>git reset</b> (sacarlo).</div><div id="ix"></div></div>
+  <div class="zone z3"><div class="label">Zona 3</div><h2>Repositorio</h2><div class="hint">El historial. El último commit, arriba.</div><div id="repo"></div></div>
+</div>
+<div class="grid2" style="margin-top:18px">
+  <div class="term" id="term"></div>
+  <div class="panel-light"><div class="label">Qué está pasando</div><div class="explain" id="exp"></div></div>
+</div>
+</main><a class="back" href="index.html">← Todas las animaciones</a>
+<script src="graph.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const term = new Term($('term'));
+let files, commits, hashN;
+const els = {};
+function explain(h) { $('exp').innerHTML = h; }
+function hash() { hashN++; return ((hashN * 2654435761) >>> 0).toString(16).slice(0, 7); }
+function reset() {
+  files = { 'guia.md': { h: 1, i: 1, w: 1 }, 'README.md': { h: 1, i: 1, w: 1 }, 'participantes/ana.md': null };
+  commits = [{ h: 'e91b5a2', m: 'Primera versión de la guía', f: ['guia.md', 'README.md'], old: true }]; hashN = 3;
+  Object.values(els).forEach(e => e.remove()); for (const k in els) delete els[k];
+  term.clear(); render(true); status();
+  explain('Todo está guardado: los tres valores coinciden (<b>directorio = preparación = último commit</b>). Edita un archivo para empezar.');
+}
+function code(f) {
+  if (!f) return null; const X = f.i !== f.h ? (f.h === null ? 'A' : 'M') : ' ', Y = f.w !== f.i ? 'M' : ' ';
+  if (f.h === null && f.i === null) return '??'; return X + Y;
+}
+function status() {
+  const lines = Object.entries(files).filter(([n, f]) => f && code(f) !== '  ').map(([n, f]) => code(f).replace(/ /g, '·') + ' ' + n);
+  term.cmd('git status -s'); if (!lines.length) term.out('(nada: working tree clean)', 'g'); else lines.forEach(l => term.out(l));
+}
+function chip(key, cls, label, st, act, onclick, restore) {
+  let e = els[key];
+  if (!e) { e = els[key] = document.createElement('div'); e.style.animation = 'pop .45s ease'; }
+  e.className = 'chip ' + cls; e.innerHTML = `<span class="st">${st}</span><span>${label}</span><span class="act">${act || ''}</span>`;
+  if (restore) { const r = document.createElement('span'); r.className = 'rs'; r.textContent = 'restore'; r.onclick = ev => { ev.stopPropagation(); restore(); }; e.appendChild(r); }
+  e.onclick = onclick || null; return e;
+}
+function render(instant) {
+  const first = {}; Object.entries(els).forEach(([k, e]) => { if (e.isConnected) first[k] = e.getBoundingClientRect(); });
+  const wd = $('wd'), ix = $('ix'), used = new Set();
+  Object.entries(files).forEach(([n, f]) => {
+    if (!f) return;
+    const c = code(f);
+    const wk = 'w:' + n; used.add(wk);
+    let e;
+    if (c === '??') e = chip(wk, 'new', n, '??', 'git add ›', () => add(n));
+    else if (f.w !== f.i) e = chip(wk, 'mod', n, 'M', 'git add ›', () => add(n), () => restore(n));
+    else e = chip(wk, 'clean', n, '✓', '', null);
+    wd.appendChild(e);
+    if (f.i !== f.h && f.i !== null) { const ik = 'i:' + n + ':' + f.i; used.add(ik); ix.appendChild(chip(ik, 'stg', n, f.h === null ? 'A' : 'M', '‹ git reset', () => unstage(n))); }
+  });
+  Object.keys(els).forEach(k => { if (!used.has(k)) { els[k].remove(); delete els[k]; } });
+  $('repo').innerHTML = commits.slice().reverse().map((c, i) => `<div class="commit ${c.old || i ? 'old' : ''}"><div class="h">commit ${c.h}${i === 0 ? '  (HEAD → main)' : ''}</div><div class="m">${c.m}</div><div class="f">${c.f.join(' · ')}</div></div>`).join('');
+  if (instant) return;
+  Object.entries(els).forEach(([k, e]) => {
+    const a = first[k]; if (!a) return; const b = e.getBoundingClientRect(); const dx = a.left - b.left, dy = a.top - b.top;
+    if (!dx && !dy) return; e.style.animation = 'none'; e.style.transition = 'none'; e.style.transform = `translate(${dx}px,${dy}px)`;
+    requestAnimationFrame(() => requestAnimationFrame(() => { e.style.transition = 'transform .6s cubic-bezier(.2,.8,.2,1)'; e.style.transform = ''; }));
+  });
+}
+function add(n) {
+  const f = files[n]; if (!f || f.w === f.i) return; const from = els['w:' + n].getBoundingClientRect();
+  f.i = f.w;
+  term.cmd('git add ' + n); render();
+  const e = els['i:' + n + ':' + f.i]; if (e) { const b = e.getBoundingClientRect(); e.style.animation = 'none'; e.style.transition = 'none'; e.style.transform = `translate(${from.left - b.left}px,${from.top - b.top}px)`; requestAnimationFrame(() => requestAnimationFrame(() => { e.style.transition = 'transform .7s cubic-bezier(.2,.8,.2,1)'; e.style.transform = ''; })); }
+  status(); explain(`<b>git add</b> copia la versión actual de <b>${n}</b> al área de preparación. Si lo vuelves a editar, la copia preparada <b>no cambia</b>: tendrás que hacer add otra vez (estado <b>MM</b>).`);
+}
+function addAll() { const ns = Object.keys(files).filter(n => files[n] && files[n].w !== files[n].i); if (!ns.length) { term.cmd('git add .'); explain('No hay cambios que preparar.'); return; } ns.forEach(n => { files[n].i = files[n].w; }); term.cmd('git add .'); render(); status(); explain('<b>git add .</b> prepara todos los archivos cambiados de la carpeta.'); }
+function unstage(n) { const f = files[n]; f.i = f.h; term.cmd('git reset ' + n); render(); status(); explain(`<b>git reset ${n}</b> lo saca del área de preparación. <b>Tu cambio sigue en el disco</b>: no se pierde nada.`); }
+function restore(n) { const f = files[n]; f.w = f.i; term.cmd('git restore ' + n); render(); status(); explain(`<b>git restore ${n}</b> devuelve el archivo a la última versión guardada. <b>El cambio sin guardar se pierde</b>.`); }
+function edit(n) {
+  let f = files[n];
+  if (!f) { files[n] = { h: null, i: null, w: 1 }; term.cmd(`echo "Hola, soy Ana" > ${n}`); render(); status(); explain(`Archivo nuevo: Git lo ve pero <b>no lo sigue</b> todavía (<b>??</b>, untracked).`); return; }
+  f.w++; term.cmd(`# editas ${n} y guardas`); render(); status();
+  explain(f.i !== f.h ? `Has vuelto a editar <b>${n}</b> después de prepararlo: ahora está <b>en dos zonas</b> a la vez (estado <b>MM</b>).` : `Git detecta que <b>${n}</b> ha cambiado (<b>M</b> en la 2.ª columna), pero aún no lo guarda.`);
+}
+function commit() {
+  const staged = Object.keys(files).filter(n => files[n] && files[n].i !== files[n].h && files[n].i !== null);
+  const m = $('msg').value.trim() || 'Cambios';
+  term.cmd(`git commit -m "${m}"`);
+  if (!staged.length) { term.out('nothing added to commit but untracked files present (use "git add" to track)', 'e'); explain('El área de preparación está vacía: <b>no hay nada que guardar</b>. Usa git add primero.'); return; }
+  const rects = staged.map(n => [n, els['i:' + n + ':' + files[n].i].getBoundingClientRect()]);
+  const h = hash(); staged.forEach(n => files[n].h = files[n].i);
+  commits.push({ h, m, f: staged }); render();
+  const target = $('repo').firstElementChild.getBoundingClientRect();
+  rects.forEach(([n, r], k) => {
+    const g = document.createElement('div'); g.className = 'chip stg'; g.innerHTML = `<span class="st">✓</span><span>${n}</span>`;
+    Object.assign(g.style, { position: 'fixed', left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', margin: 0, zIndex: 50, transition: 'all .8s cubic-bezier(.5,0,.2,1)', pointerEvents: 'none' });
+    document.body.appendChild(g);
+    requestAnimationFrame(() => requestAnimationFrame(() => { Object.assign(g.style, { left: target.left + 10 + k * 8 + 'px', top: target.top + 10 + 'px', transform: 'scale(.5)', opacity: '0' }); }));
+    setTimeout(() => g.remove(), 900);
+  });
+  term.out(`[main ${h}] ${m}\n ${staged.length} file${staged.length > 1 ? 's' : ''} changed`, 'g'); status();
+  explain(`<b>git commit</b> guarda lo preparado como una instantánea (<b>${h}</b>) con autor, fecha y mensaje. Lo que no estaba preparado <b>se queda fuera</b>.`);
+}
+let demoOn = false;
+async function demo() {
+  if (demoOn) return; demoOn = true; $('bDemo').disabled = true; reset();
+  const st = [() => edit('participantes/ana.md'), () => edit('guia.md'), () => add('participantes/ana.md'), () => edit('participantes/ana.md'), () => add('participantes/ana.md'), () => { $('msg').value = 'Añade la ficha de Ana'; commit(); }, () => add('guia.md'), () => unstage('guia.md'), () => restore('guia.md')];
+  for (const s of st) { await sleep(2600); if (!demoOn) break; s(); }
+  demoOn = false; $('bDemo').disabled = false;
+}
+$('eGuia').onclick = () => edit('guia.md'); $('eReadme').onclick = () => edit('README.md'); $('eNew').onclick = () => edit('participantes/ana.md');
+$('bAdd').onclick = addAll; $('bCommit').onclick = commit; $('bReset').onclick = () => { demoOn = false; $('bDemo').disabled = false; reset(); }; $('bDemo').onclick = demo;
+reset();
+</script></body></html>

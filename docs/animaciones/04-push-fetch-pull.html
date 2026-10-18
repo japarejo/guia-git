@@ -1,0 +1,104 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>push, fetch y pull · Git y GitHub</title><link rel="stylesheet" href="common.css"></head><body>
+<header><div><h1>push, fetch y pull</h1><p>Cómo viajan los commits entre tu ordenador y GitHub, y por qué a veces un push se rechaza</p><div class="bar"></div></div><span class="tag">Bloque 06 · Sincronizar</span></header>
+<main>
+<div class="controls">
+  <button class="primary" id="bCommit"><code>git commit</code></button>
+  <button id="bPush"><code>git push</code></button>
+  <button id="bFetch"><code>git fetch</code></button>
+  <button id="bPull"><code>git pull</code></button>
+  <button class="ghost" id="bOther">Un compañero hace push</button>
+  <span style="flex:1"></span>
+  <button class="ghost" id="bDemo">▶ Demo guiada</button>
+  <button class="ghost" id="bReset">Reiniciar</button>
+</div>
+<canvas id="cv"></canvas>
+<div class="grid2" style="margin-top:18px">
+  <div class="term" id="term"></div>
+  <div>
+    <div class="panel-dark" style="margin-bottom:14px"><div class="label">git status</div><div id="status" style="font-family:var(--mono);font-size:17px;margin-top:6px"></div></div>
+    <div class="panel-light"><div class="label">Qué está pasando</div><div class="explain" id="exp"></div></div>
+  </div>
+</div>
+</main><a class="back" href="index.html">← Todas las animaciones</a>
+<script src="graph.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const term = new Term($('term'));
+let local, remote, view, nL, nR;
+function explain(h) { $('exp').innerHTML = h; }
+function status() {
+  const [a, b] = local.aheadBehind('main', 'origin/main');
+  let s = "On branch main<br>";
+  if (!a && !b) s += "Your branch is up to date with 'origin/main'.";
+  else if (a && !b) s += `Your branch is ahead of 'origin/main' by ${a} commit${a > 1 ? 's' : ''}.<br><span style="color:#7EE2B0">(use "git push" to publish)</span>`;
+  else if (!a && b) s += `Your branch is behind 'origin/main' by ${b} commit${b > 1 ? 's' : ''}.<br><span style="color:#7EE2B0">(use "git pull" to update)</span>`;
+  else s += `Your branch and 'origin/main' have diverged,<br>and have ${a} and ${b} different commits each.`;
+  $('status').innerHTML = s + '<div style="opacity:.7;margin-top:6px;font-size:14px">Ojo: compara con la última copia conocida de GitHub (origin/main), no con GitHub en directo.</div>';
+}
+function refresh() { view.layout(); status(); }
+function reset() {
+  SEQ = 0; nL = 0; nR = 0;
+  local = new Repo('local'); remote = new Repo('remote');
+  local.commit('A', 'Primera versión'); local.commit('B', 'Añade índice');
+  Object.values(local.c).forEach(c => remote.put(c)); remote.refs.main = 'B'; local.branch('origin/main', 'B');
+  const regs = [
+    { repo: local, x: 0, y: 0, w: 590, h: 420, top: 150, laneH: 100, padR: 120, title: 'Tu ordenador', subtitle: 'Repositorio local', bg: '#EEF2F9' },
+    { repo: remote, x: 610, y: 0, w: 590, h: 420, top: 150, laneH: 100, padR: 120, title: 'GitHub · origin', subtitle: 'Repositorio remoto', bg: '#E1EAF7', noHead: true }];
+  if (!view) view = new GraphView($('cv'), regs, { height: 420 }); else { view.regions = regs; view.nodes = {}; view.labels = {}; }
+  term.clear(); term.out('# Local y GitHub están sincronizados');
+  explain('A la izquierda, tu repositorio; a la derecha, GitHub. <b>origin/main</b> (discontinua) es tu recuerdo de cómo estaba main en GitHub.');
+  view.layout(true); status();
+}
+function commit() {
+  const id = 'L' + (++nL); local.commit(id, 'Cambio local ' + nL);
+  term.cmd(`git commit -m "Cambio local ${nL}"`); term.out(`[main ${id}] Cambio local ${nL}`); view.pulse(0, id);
+  refresh(); explain(`El commit <b>${id}</b> existe <b>solo en tu ordenador</b>. GitHub no lo ve hasta que hagas push.`);
+}
+function other() {
+  const id = 'R' + (++nR); remote.commit(id, 'Cambio de un compañero ' + nR); view.pulse(1, id, '#E07A2E');
+  term.out(`# (en GitHub) un compañero ha subido ${id}`, 'g');
+  refresh(); explain(`main avanza en GitHub con <b>${id}</b>. Tu ordenador <b>no se entera solo</b>: origin/main sigue donde estaba.`);
+}
+function push() {
+  term.cmd('git push');
+  const lt = local.tip('main'), rt = remote.refs.main;
+  if (lt === rt) { term.out('Everything up-to-date'); explain('No hay nada que subir.'); return; }
+  if (!local.c[rt] || !local.isAnc(rt, lt)) {
+    term.out(' ! [rejected]        main -> main (fetch first)', 'e');
+    term.out("error: failed to push some refs\nhint: Updates were rejected because the remote contains work\nhint: that you do not have locally. Use 'git pull' first.", 'e');
+    $('cv').classList.remove('shake'); void $('cv').offsetWidth; $('cv').classList.add('shake');
+    explain('<b>Push rechazado</b>: GitHub tiene commits que tú no tienes. Primero <b>git pull</b> para integrarlos y después vuelve a hacer push.'); return;
+  }
+  local.missingFrom(remote, lt).forEach(c => remote.put(c)); remote.refs.main = lt; local.refs['origin/main'] = lt;
+  term.out(`To github.com:japarejo/guia-git.git\n   ${rt}..${lt}  main -> main`, 'g'); view.pulse(1, lt);
+  refresh(); explain('Tus commits <b>viajan a GitHub</b> y main avanza allí. origin/main se actualiza porque acabas de hablar con GitHub.');
+}
+function fetch(silent) {
+  if (!silent) term.cmd('git fetch');
+  const rt = remote.refs.main, old = local.refs['origin/main'];
+  if (rt === old) { if (!silent) { term.out('(sin novedades)'); explain('GitHub no tiene commits nuevos.'); } return false; }
+  remote.missingFrom(local, rt).forEach(c => local.put(c)); local.refs['origin/main'] = rt;
+  term.out(`From github.com:japarejo/guia-git\n   ${old}..${rt}  main -> origin/main`);
+  if (!silent) explain('<b>fetch</b> descarga los commits nuevos y mueve <b>origin/main</b>. Tu rama main y tus archivos <b>no cambian</b>.');
+  refresh(); return true;
+}
+function pull() {
+  term.cmd('git pull'); fetch(true);
+  const id = 'M' + (nL + nR);
+  const r = local.merge('origin/main', id, 'Merge origin/main');
+  if (r === 'up-to-date') { term.out('Already up to date.'); explain('Tu main ya tiene todo lo de GitHub.'); }
+  else if (r === 'ff') { term.out('Fast-forward'); explain('<b>pull = fetch + merge</b>. Como tú no tenías cambios propios, main solo avanza (<b>fast-forward</b>).'); view.pulse(0, local.tip()); }
+  else { term.out("Merge made by the 'ort' strategy."); explain(`Habíais cambiado los dos: pull crea el <b>commit de fusión ${id}</b>. Si hubierais tocado la misma línea, aquí aparecería un <b>conflicto</b>. Ahora ya puedes hacer push.`); view.pulse(0, id, '#E07A2E'); }
+  refresh();
+}
+let demoOn = false;
+async function demo() {
+  if (demoOn) return; demoOn = true; $('bDemo').disabled = true; reset();
+  for (const s of [commit, push, other, fetch, pull, commit, other, push, pull, push]) { await sleep(2300); if (!demoOn) break; s(); }
+  demoOn = false; $('bDemo').disabled = false;
+}
+$('bCommit').onclick = commit; $('bPush').onclick = push; $('bFetch').onclick = () => fetch(); $('bPull').onclick = pull; $('bOther').onclick = other;
+$('bReset').onclick = () => { demoOn = false; $('bDemo').disabled = false; reset(); }; $('bDemo').onclick = demo;
+reset();
+</script></body></html>

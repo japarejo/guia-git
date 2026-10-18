@@ -1,0 +1,88 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ramas y HEAD · Git y GitHub</title><link rel="stylesheet" href="common.css"></head><body>
+<header><div><h1>Ramas y HEAD</h1><p>Una rama es un puntero a un commit: crea ramas, haz commits, cambia de rama y fusiona</p><div class="bar"></div></div><span class="tag">Bloque 04 · Ramas</span></header>
+<main>
+<div class="controls">
+  <button class="primary" id="bCommit"><code>git commit</code></button>
+  <input type="text" id="newName" value="mejora-ana" size="12" aria-label="Nombre de la rama">
+  <button id="bBranch"><code>git switch -c</code></button>
+  <select id="selSwitch" aria-label="Rama a la que cambiar"></select>
+  <button id="bSwitch"><code>git switch</code></button>
+  <select id="selMerge" aria-label="Rama a fusionar"></select>
+  <button id="bMerge"><code>git merge</code></button>
+  <span style="flex:1"></span>
+  <button class="ghost" id="bDemo">▶ Demo guiada</button>
+  <button class="ghost" id="bReset">Reiniciar</button>
+</div>
+<canvas id="cv"></canvas>
+<div class="grid2" style="margin-top:18px">
+  <div class="term" id="term"></div>
+  <div class="panel-light"><div class="label">Qué está pasando</div><div class="explain" id="exp"></div></div>
+</div>
+</main><a class="back" href="index.html">← Todas las animaciones</a>
+<script src="graph.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const term = new Term($('term'));
+let repo, view, letter;
+const nextId = () => String.fromCharCode(65 + (letter++ % 26)) + (letter > 26 ? Math.floor((letter - 1) / 26) : '');
+const names = ['mejora-ana', 'mejora-luis', 'corrige-enlaces', 'nueva-seccion', 'prueba'];
+function explain(h) { $('exp').innerHTML = h; }
+function refresh() {
+  view.layout();
+  const bs = Object.keys(repo.refs);
+  $('selSwitch').innerHTML = bs.map(b => `<option ${b === repo.head ? 'disabled' : ''}>${b}</option>`).join('');
+  const others = bs.filter(b => b !== repo.head);
+  $('selMerge').innerHTML = others.map(b => `<option>${b}</option>`).join('');
+  $('bMerge').disabled = !others.length; $('bSwitch').disabled = bs.length < 2;
+  const sel = [...$('selSwitch').options].find(o => !o.disabled); if (sel) sel.selected = true;
+  const free = names.find(n => !repo.refs[n]); if (free && repo.refs[$('newName').value]) $('newName').value = free;
+}
+function reset(instant) {
+  SEQ = 0; letter = 0; repo = new Repo('local');
+  repo.commit(nextId(), 'Primera versión de la guía'); repo.commit(nextId(), 'Añade índice');
+  if (!view) view = new GraphView($('cv'), [{ repo, x: 0, y: 0, w: 1200, h: 380, top: 110, laneH: 90, padR: 200 }], { height: 380 });
+  else { view.regions[0].repo = repo; view.nodes = {}; view.labels = {}; }
+  term.clear(); term.out('# Repositorio con dos commits en main', 'o');
+  explain('Cada círculo es un commit. Las etiquetas son ramas: <b>punteros</b> a un commit. <b>HEAD</b> marca la rama en la que estás.');
+  view.layout(true); refresh();
+}
+function doCommit() {
+  const id = nextId(); repo.commit(id, 'Cambio ' + id);
+  term.cmd(`git commit -m "Cambio ${id}"`); term.out(`[${repo.head} ${id}] Cambio ${id}`);
+  view.pulse(0, id); refresh();
+  explain(`Nuevo commit <b>${id}</b>. Solo avanza la rama en la que estás (<b>${repo.head}</b>); las demás ramas no se mueven.`);
+}
+function doBranch(name) {
+  name = (name || $('newName').value).trim().replace(/\s+/g, '-'); if (!name) return;
+  if (repo.refs[name]) { term.cmd(`git switch -c ${name}`); term.out(`fatal: a branch named '${name}' already exists`, 'e'); return; }
+  repo.branch(name); repo.switch(name);
+  term.cmd(`git switch -c ${name}`); term.out(`Switched to a new branch '${name}'`);
+  refresh(); explain(`Se crea <b>${name}</b> apuntando al mismo commit y HEAD pasa a ella. <b>No se copia ningún archivo</b>: solo hay un puntero más.`);
+}
+function doSwitch(name) {
+  name = name || $('selSwitch').value; repo.switch(name);
+  term.cmd(`git switch ${name}`); term.out(`Switched to branch '${name}'`);
+  refresh(); explain(`HEAD se mueve a <b>${name}</b>. Git cambia tus archivos al contenido de ese commit.`);
+}
+function doMerge(name) {
+  name = name || $('selMerge').value; const id = nextId();
+  term.cmd(`git merge ${name}`);
+  const r = repo.merge(name, id, `Merge branch '${name}'`);
+  if (r === 'up-to-date') { letter--; term.out('Already up to date.'); explain(`<b>${repo.head}</b> ya contiene todos los commits de <b>${name}</b>.`); }
+  else if (r === 'ff') { letter--; term.out('Updating...\nFast-forward'); explain(`<b>Fast-forward</b>: ${repo.head} no había cambiado, así que Git solo <b>mueve el puntero</b> hasta ${name}. No hay commit nuevo.`); view.pulse(0, repo.tip()); }
+  else { term.out(`Merge made by the 'ort' strategy.`); explain(`Las dos ramas avanzaron: Git crea el <b>commit de fusión ${id}</b>, con dos padres (círculo hueco).`); view.pulse(0, id, '#E07A2E'); }
+  refresh();
+}
+let demoOn = false;
+async function demo() {
+  if (demoOn) return; demoOn = true; $('bDemo').disabled = true; reset();
+  const steps = [() => doBranch('mejora-ana'), doCommit, doCommit, () => doSwitch('main'), doCommit, () => doMerge('mejora-ana'), () => doBranch('mejora-luis'), doCommit, () => doSwitch('main'), () => doMerge('mejora-luis')];
+  for (const s of steps) { await sleep(1900); if (!demoOn) break; s(); }
+  demoOn = false; $('bDemo').disabled = false;
+}
+$('bCommit').onclick = doCommit; $('bBranch').onclick = () => doBranch(); $('bSwitch').onclick = () => doSwitch(); $('bMerge').onclick = () => doMerge();
+$('bReset').onclick = () => { demoOn = false; $('bDemo').disabled = false; reset(); }; $('bDemo').onclick = demo;
+$('newName').onkeydown = e => { if (e.key === 'Enter') doBranch(); };
+reset(true);
+</script></body></html>

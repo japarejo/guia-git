@@ -1,0 +1,113 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fusión a tres bandas y conflictos · Git y GitHub</title><link rel="stylesheet" href="common.css">
+<style>
+.cols{display:grid;grid-template-columns:repeat(3,1fr) 1.25fr;gap:16px}
+.col{border-radius:18px;padding:16px}
+.col h2{font-family:'League Spartan',sans-serif;font-size:24px;margin:2px 0 10px}
+.cb{background:#F0F2F7}.cm{background:#EEF2F9}.cr{background:#E1EAF7}.cx{background:#1A375E;color:#fff}.cx .label{color:#E1EAF7}
+.ln{display:flex;align-items:center;gap:8px;margin-bottom:8px;transition:transform .3s}
+.ln .n{font-family:var(--mono);font-size:13px;color:#8A97B3;width:18px;text-align:right}
+.cx .ln .n{color:#9FB2D6}
+.ln input{flex:1;font-family:var(--mono);font-size:15px;padding:8px 10px;border-radius:10px;border:2px solid transparent;background:#fff;color:var(--navy);width:100%}
+.ln input.changed{border-color:var(--blue);background:#F2F6FF}
+.ln.scan{transform:scale(1.03)} .ln.scan input{box-shadow:0 0 0 4px rgba(224,122,46,.35)}
+.res{font-family:var(--mono);font-size:15px;background:#22477A;border-radius:10px;padding:8px 10px;flex:1;animation:fadeIn .4s ease;min-height:38px}
+.why{font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.why.a{background:#2E9E6B}.why.b{background:#3D6FD9}.why.c{background:#5B6B8C}
+.conf{background:#3A1F1F;border:2px solid var(--warn);border-radius:12px;padding:8px 10px;flex:1;animation:pop .5s ease;font-family:var(--mono);font-size:14px;line-height:1.5}
+.conf .mk{color:#FFB37A}
+.conf .bt{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.conf button{font-size:12px;padding:4px 10px;border-color:#FFB37A;color:#FFB37A;background:transparent}
+.conf button:hover{background:#FFB37A;color:#3A1F1F}
+</style></head><body>
+<header><div><h1>Fusión a tres bandas y conflictos</h1><p>Git compara cada línea con el antepasado común y solo te pide ayuda cuando no puede decidir</p><div class="bar"></div></div><span class="tag">Bloque 09 · Resolver conflictos</span></header>
+<main>
+<div class="controls">
+  <button data-c="1">Caso 1 · líneas distintas</button>
+  <button data-c="2">Caso 2 · misma línea</button>
+  <button data-c="3">Caso 3 · los dos, igual</button>
+  <span style="width:20px"></span>
+  <button class="primary" id="bMerge"><code>git merge mejora-ana</code></button>
+  <button id="bCommit" disabled><code>git add · git commit</code></button>
+  <span style="flex:1"></span>
+  <button class="ghost" id="bReset">Reiniciar</button>
+</div>
+<p style="margin:0 0 12px;font-size:16px;color:#5B6B8C">Puedes <b>editar cualquier línea</b> de main o de la rama antes de fusionar. El borde azul indica qué ha cambiado respecto al antepasado común.</p>
+<div class="cols">
+  <div class="col cb"><div class="label">Antepasado común</div><h2>Versión base</h2><div id="base"></div></div>
+  <div class="col cm"><div class="label">HEAD</div><h2>main</h2><div id="ours"></div></div>
+  <div class="col cr"><div class="label">Rama</div><h2>mejora-ana</h2><div id="theirs"></div></div>
+  <div class="col cx"><div class="label">Resultado</div><h2>guia.md tras la fusión</h2><div id="out"></div></div>
+</div>
+<div class="grid2" style="margin-top:18px">
+  <div class="term" id="term"></div>
+  <div class="panel-light"><div class="label">Fusión a tres bandas</div><div class="explain" id="exp"></div></div>
+</div>
+</main><a class="back" href="index.html">← Todas las animaciones</a>
+<script src="graph.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const term = new Term($('term'));
+const BASE = ['# Guía de Git', 'Haz commits pequeños.', 'Usa una rama por tarea.', 'Escribe mensajes claros.', 'Haz git pull a menudo.'];
+const CASES = {
+  1: { o: { 1: 'Haz commits pequeños y frecuentes.' }, t: { 3: 'Escribe mensajes claros: qué y por qué.' } },
+  2: { o: { 2: 'Usa una rama por issue.' }, t: { 2: 'Crea una rama para cada tarea.' } },
+  3: { o: { 4: 'Haz git pull antes de empezar.' }, t: { 4: 'Haz git pull antes de empezar.', 0: '# Guía de Git del equipo' } }
+};
+let cur = 1, pending = 0, running = false;
+function explain(h) { $('exp').innerHTML = h; }
+function row(i, v, editable) {
+  const d = document.createElement('div'); d.className = 'ln'; d.innerHTML = `<span class="n">${i + 1}</span>`;
+  const inp = document.createElement('input'); inp.value = v; inp.readOnly = !editable; d.appendChild(inp);
+  if (editable) inp.oninput = () => mark(); return d;
+}
+function mark() { ['ours', 'theirs'].forEach(k => [...$(k).querySelectorAll('input')].forEach((inp, i) => inp.classList.toggle('changed', inp.value !== BASE[i]))); }
+function load(c) {
+  cur = c; running = false; pending = 0;
+  document.querySelectorAll('[data-c]').forEach(b => b.classList.toggle('primary', +b.dataset.c === c));
+  ['base', 'ours', 'theirs', 'out'].forEach(k => $(k).innerHTML = '');
+  BASE.forEach((v, i) => { $('base').appendChild(row(i, v, false)); $('ours').appendChild(row(i, CASES[c].o[i] ?? v, true)); $('theirs').appendChild(row(i, CASES[c].t[i] ?? v, true)); });
+  mark(); term.clear(); term.cmd('git switch main'); $('bMerge').disabled = false; $('bCommit').disabled = true;
+  explain('Git compara <b>cada línea</b> en tres versiones: la del <b>antepasado común</b>, la de <b>main</b> y la de <b>tu rama</b>. Pulsa <b>git merge</b> para ver cómo decide.');
+}
+const val = (k, i) => $(k).querySelectorAll('input')[i].value;
+async function merge() {
+  if (running) return; running = true; $('bMerge').disabled = true; $('out').innerHTML = ''; pending = 0;
+  term.cmd('git merge mejora-ana'); term.out('Auto-merging guia.md');
+  for (let i = 0; i < BASE.length; i++) {
+    if (!running) return;
+    const rows = ['base', 'ours', 'theirs'].map(k => $(k).children[i]); rows.forEach(r => r.classList.add('scan'));
+    await sleep(650); rows.forEach(r => r.classList.remove('scan'));
+    const b = val('base', i), o = val('ours', i), t = val('theirs', i);
+    const d = document.createElement('div'); d.className = 'ln'; d.innerHTML = `<span class="n">${i + 1}</span>`;
+    let why, cls, text = o;
+    if (o === t) { why = o === b ? 'sin cambios' : 'igual en ambas'; cls = 'c'; }
+    else if (o === b) { why = 'de la rama'; cls = 'b'; text = t; }
+    else if (t === b) { why = 'de main'; cls = 'a'; }
+    else { pending++; d.appendChild(conflictBox(o, t, d)); $('out').appendChild(d); continue; }
+    const r = document.createElement('div'); r.className = 'res'; r.textContent = text; d.appendChild(r);
+    const w = document.createElement('span'); w.className = 'why ' + cls; w.textContent = why; d.appendChild(w); $('out').appendChild(d);
+  }
+  running = false;
+  if (pending) { term.out('CONFLICT (content): Merge conflict in guia.md\nAutomatic merge failed; fix conflicts and then commit the result.', 'e');
+    explain('Main y la rama cambiaron <b>la misma línea</b> de forma distinta: Git <b>no puede elegir</b> y marca el conflicto. Decide tú qué queda en cada bloque.'); }
+  else { term.out("Merge made by the 'ort' strategy.", 'g'); explain('<b>Sin conflictos</b>: en cada línea solo una de las dos ramas había cambiado algo (o las dos hicieron lo mismo), así que Git combina solo.'); $('bMerge').disabled = false; }
+}
+function conflictBox(o, t, holder) {
+  const c = document.createElement('div'); c.className = 'conf';
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  c.innerHTML = `<div class="mk">&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD</div><div>${esc(o)}</div><div class="mk">=======</div><div>${esc(t)}</div><div class="mk">&gt;&gt;&gt;&gt;&gt;&gt;&gt; mejora-ana</div><div class="bt"></div>`;
+  const opts = [['Quedarme con main', o], ['Quedarme con la rama', t], ['Las dos', o + ' / ' + t]];
+  opts.forEach(([l, v]) => { const b = document.createElement('button'); b.textContent = l; b.onclick = () => {
+    c.remove(); const r = document.createElement('div'); r.className = 'res'; r.textContent = v; holder.appendChild(r);
+    const w = document.createElement('span'); w.className = 'why a'; w.textContent = 'resuelto'; holder.appendChild(w);
+    term.out(`# Editas guia.md: dejas «${v}» y borras las marcas`);
+    if (--pending === 0) { $('bCommit').disabled = false; explain('Conflicto resuelto en el archivo. Para cerrar la fusión: <b>git add</b> y <b>git commit</b>.'); }
+  }; c.querySelector('.bt').appendChild(b); });
+  return c;
+}
+function close() { term.cmd('git add guia.md'); term.cmd('git commit'); term.out("[main 4f1c2ad] Merge branch 'mejora-ana'", 'g'); $('bCommit').disabled = true; $('bMerge').disabled = false; explain('<b>Fusión cerrada</b>. Comprueba con <b>git status</b> que todo está limpio y haz <b>git push</b>.'); }
+document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => load(+b.dataset.c));
+$('bMerge').onclick = merge; $('bCommit').onclick = close; $('bReset').onclick = () => load(cur);
+load(1);
+</script></body></html>

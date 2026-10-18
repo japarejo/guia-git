@@ -1,0 +1,64 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>merge, fast-forward y rebase · Git y GitHub</title><link rel="stylesheet" href="common.css"></head><body>
+<header><div><h1>merge, fast-forward y rebase</h1><p>Tres formas de integrar una rama y cómo queda el historial en cada caso</p><div class="bar"></div></div><span class="tag">Bloque 09 · Resolver conflictos</span></header>
+<main>
+<div class="controls">
+  <button data-s="1">Escenario 1 · main no ha cambiado</button>
+  <button data-s="2">Escenario 2 · main ha avanzado</button>
+  <span style="width:24px"></span>
+  <button class="primary act" id="bFF"><code>git merge</code> (fast-forward)</button>
+  <button class="act" id="bNoFF"><code>git merge --no-ff</code></button>
+  <button class="primary act" id="bMerge"><code>git merge</code></button>
+  <button class="act" id="bRebase"><code>git rebase main</code></button>
+  <button class="primary" id="bAfter"><code>git merge</code> tras el rebase</button>
+  <span style="flex:1"></span>
+  <button class="ghost" id="bReset">Reiniciar</button>
+</div>
+<canvas id="cv"></canvas>
+<div class="grid2" style="margin-top:18px">
+  <div class="term" id="term"></div>
+  <div class="panel-light"><div class="label">Qué está pasando</div><div class="explain" id="exp"></div></div>
+</div>
+</main><a class="back" href="index.html">← Todas las animaciones</a>
+<script src="graph.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const term = new Term($('term'));
+let repo, view, scen = 1;
+function explain(h) { $('exp').innerHTML = h; }
+function build(s) {
+  scen = s; SEQ = 0; repo = new Repo('local');
+  repo.commit('A', 'Primera versión'); repo.commit('B', 'Añade índice');
+  repo.branch('mejora-ana'); repo.switch('mejora-ana'); repo.commit('C', 'Añade consejo'); repo.commit('D', 'Corrige errata');
+  repo.switch('main'); if (s === 2) repo.commit('E', 'Cambio de Luis en main');
+  if (!view) view = new GraphView($('cv'), [{ repo, x: 0, y: 0, w: 1200, h: 400, top: 130, laneH: 120, padR: 200, dx: 130 }], { height: 400, ease: 220 });
+  else { view.regions[0].repo = repo; view.nodes = {}; view.labels = {}; }
+  view.layout(true); term.clear();
+  document.querySelectorAll('[data-s]').forEach(b => b.classList.toggle('primary', +b.dataset.s === s));
+  $('bFF').style.display = s === 1 ? '' : 'none'; $('bNoFF').style.display = s === 1 ? '' : 'none';
+  $('bMerge').style.display = s === 2 ? '' : 'none'; $('bRebase').style.display = s === 2 ? '' : 'none'; $('bAfter').style.display = 'none';
+  [...document.querySelectorAll('.act')].forEach(b => b.disabled = false);
+  term.out(s === 1 ? '# main no ha cambiado desde que nació mejora-ana' : '# main y mejora-ana han avanzado por separado');
+  explain(s === 1 ? 'main sigue en <b>B</b>; la rama <b>mejora-ana</b> añadió C y D. ¿Qué pasa al fusionar?' : 'Luis añadió <b>E</b> a main mientras Ana trabajaba en C y D. Hay dos formas de integrar: <b>merge</b> o <b>rebase</b>.');
+}
+function lock() { [...document.querySelectorAll('.act')].forEach(b => b.disabled = true); }
+function ff() { lock(); term.cmd('git switch main'); term.cmd('git merge mejora-ana'); repo.merge('mejora-ana', 'M', ''); term.out('Updating B..D\nFast-forward');
+  view.layout(); view.pulse(0, 'D'); explain('<b>Avance rápido</b>: main no tenía nada nuevo, así que Git <b>solo mueve el puntero</b> de B a D. El historial queda lineal y <b>no hay commit nuevo</b>.'); }
+function noff() { lock(); term.cmd('git switch main'); term.cmd('git merge --no-ff mejora-ana'); repo.mergeNoFF('mejora-ana', 'M', "Merge branch 'mejora-ana'"); term.out("Merge made by the 'ort' strategy.");
+  view.layout(); view.pulse(0, 'M', '#E07A2E'); explain('<b>--no-ff</b> obliga a crear el commit de fusión <b>M</b> aunque bastara con mover el puntero. Así queda constancia de que hubo una rama.'); }
+function merge() { lock(); term.cmd('git switch main'); term.cmd('git merge mejora-ana'); repo.merge('mejora-ana', 'M', "Merge branch 'mejora-ana'"); term.out("Merge made by the 'ort' strategy.");
+  view.layout(); view.pulse(0, 'M', '#E07A2E'); explain('Las dos ramas avanzaron: Git crea el <b>commit de fusión M</b> con <b>dos padres</b> (E y D). El historial conserva cómo ocurrió todo. Es lo que hace GitHub al fusionar una pull request.'); }
+async function rebase() {
+  lock(); term.cmd('git switch mejora-ana'); repo.switch('mejora-ana'); view.layout(); await sleep(700);
+  term.cmd('git rebase main'); repo.rebase('main', id => id + "'"); term.out('Successfully rebased and updated refs/heads/mejora-ana.', 'g');
+  view.layout(); view.pulse(0, "C'"); view.pulse(0, "D'");
+  explain("<b>rebase</b> rehace C y D <b>encima de E</b>: son commits nuevos (<b>C'</b>, <b>D'</b>, con otro hash). Los originales desaparecen. Por eso <b>solo se usa en ramas que no has publicado</b>.");
+  $('bAfter').style.display = ''; $('bAfter').disabled = false;
+}
+function after() { $('bAfter').disabled = true; term.cmd('git switch main'); repo.switch('main'); term.cmd('git merge mejora-ana'); repo.merge('mejora-ana', 'M', ''); term.out("Updating E..D'\nFast-forward");
+  view.layout(); view.pulse(0, "D'"); explain('Tras el rebase, la fusión es un <b>avance rápido</b>: el historial queda <b>totalmente lineal</b>, como si Ana hubiera empezado después de Luis.'); }
+document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => build(+b.dataset.s));
+$('bFF').onclick = ff; $('bNoFF').onclick = noff; $('bMerge').onclick = merge; $('bRebase').onclick = rebase; $('bAfter').onclick = after;
+$('bReset').onclick = () => build(scen);
+build(1);
+</script></body></html>

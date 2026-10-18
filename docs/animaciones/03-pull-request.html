@@ -1,0 +1,84 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Del issue a main · Git y GitHub</title><link rel="stylesheet" href="common.css">
+<style>
+.steps{display:flex;gap:6px;margin:4px 0 14px;flex-wrap:wrap}
+.steps .s{flex:1;min-width:70px;text-align:center;font-size:13px;font-weight:700;color:#8A97B3;padding:8px 4px;border-bottom:4px solid #D5DEEE;transition:all .3s;cursor:pointer}
+.steps .s.on{color:var(--accent);border-color:var(--accent)}
+.steps .s.done{color:var(--navy);border-color:var(--navy)}
+.gh{background:#fff;border:2px solid #D5DEEE;border-radius:16px;padding:16px 18px;min-height:270px}
+.gh .t{font-family:'League Spartan',sans-serif;font-size:24px;margin:0 0 8px}
+.badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 12px;font-size:14px;font-weight:700;color:#fff;transition:background .3s}
+.b-open{background:#2E9E6B}.b-merged{background:#8E5BD6}.b-closed{background:#C8423B}.b-issue{background:#2E9E6B}
+.evt{display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-size:15px;animation:fadeIn .4s ease}
+.av{width:30px;height:30px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:none}
+.evt .bx{background:var(--light);border-radius:10px;padding:6px 10px;flex:1}
+.evt code{font-family:var(--mono);font-size:13px}
+</style></head><body>
+<header><div><h1>Del issue a main</h1><p>El recorrido de un cambio en un equipo: rama, commits, push, pull request, revisión y fusión</p><div class="bar"></div></div><span class="tag">Bloques 05 y 08 · Pull requests y equipos</span></header>
+<main>
+<div class="steps" id="steps"></div>
+<div class="controls">
+  <button class="ghost" id="bPrev">◀ Anterior</button>
+  <button class="primary" id="bNext">Siguiente ▶</button>
+  <button id="bPlay">▶ Reproducir</button>
+  <span style="flex:1"></span>
+  <button class="ghost" id="bReset">Reiniciar</button>
+</div>
+<div class="grid2">
+  <canvas id="cv"></canvas>
+  <div class="gh" id="gh"></div>
+</div>
+<div class="grid2" style="margin-top:18px">
+  <div class="term" id="term"></div>
+  <div class="panel-light"><div class="label" id="stepLabel">Paso</div><div class="explain" id="exp"></div></div>
+</div>
+</main><a class="back" href="index.html">← Todas las animaciones</a>
+<script src="graph.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const term = new Term($('term'), 'ana$');
+let local, remote, view, gh, step = 0, playing = false;
+const AV = { Ana: '#3D6FD9', Luis: '#E07A2E', Marta: '#2E9E6B', GitHub: '#5B6B8C' };
+const STEPS = [
+  { k: 'Inicio', t: 'Punto de partida', e: 'Ana tiene <b>main</b> sincronizada con GitHub. Cada tarea del equipo empieza igual.', f: () => { } },
+  { k: 'Issue', t: '1 · La tarea es una issue', e: 'La tarea se apunta en GitHub como <b>issue #12</b>, con responsable. Así todo el equipo sabe quién hace qué.', f: () => { gh.issue = true; gh.ev.push(['Marta', 'abre la issue <b>#12 Pantalla de login</b> y se la asigna a Ana']); } },
+  { k: 'Rama', t: '2 · Una rama para la issue', e: 'Ana crea <b>12-login</b> desde main. Su trabajo no toca main hasta que se revise.', f: () => { term.cmd('git switch -c 12-login'); term.out("Switched to a new branch '12-login'"); local.branch('12-login'); local.switch('12-login'); } },
+  { k: 'Commits', t: '3 · Commits pequeños', e: 'Dos commits, cada uno con <b>un cambio lógico</b> y un mensaje que explica qué y por qué.', f: () => { term.cmd('git commit -m "Añade formulario de login"'); local.commit('C', 'Añade formulario de login'); term.cmd('git commit -m "Valida el correo"'); local.commit('D', 'Valida el correo'); view && view.pulse(0, 'D'); } },
+  { k: 'Push', t: '4 · Publicar la rama', e: 'Con <b>git push -u</b>, los commits <b>viajan a GitHub</b> y aparece la rama allí. Hasta ahora solo existían en el ordenador de Ana.', f: () => { term.cmd('git push -u origin 12-login'); term.out(' * [new branch]      12-login -> 12-login', 'g'); local.missingFrom(remote, 'D').forEach(c => remote.put(c)); remote.branch('12-login', 'D'); local.branch('origin/12-login', 'D'); } },
+  { k: 'Pull request', t: '5 · Abrir la pull request', e: 'Ana abre la PR <b>base: main ← 12-login</b>, explica el cambio y pide revisión a Marta. Escribir <b>closes #12</b> cerrará la issue al fusionar.', f: () => { gh.pr = 'open'; gh.ev.push(['Ana', 'abre la pull request <b>#13</b> · <code>main ← 12-login</code> · «closes #12»']); gh.ev.push(['Ana', 'pide revisión a <b>Marta</b>']); } },
+  { k: 'Mientras…', t: '6 · Mientras tanto, main avanza', e: 'Luis fusiona su propia PR: <b>main avanza en GitHub</b> con el commit E. Es lo normal en un equipo; GitHub lo integrará con un commit de fusión.', f: () => { remote.switch('main'); remote.commit('E', 'Merge pull request #11 de Luis'); view && view.pulse(1, 'E', '#E07A2E'); gh.ev.push(['Luis', 'fusiona la pull request <b>#11</b> en main']); } },
+  { k: 'Revisión', t: '7 · Revisión', e: 'Marta lee <b>Files changed</b>, comenta una línea y <b>aprueba</b>. Con main protegida, sin aprobación no se puede fusionar.', f: () => { gh.ev.push(['Marta', 'comenta en <code>login.js</code>, línea 14: «¿Validamos también el dominio?»']); gh.ev.push(['Ana', 'responde: «Lo dejo en una issue nueva, #14»']); gh.ev.push(['Marta', '<b style="color:#2E9E6B">aprueba</b> los cambios']); gh.approved = true; } },
+  { k: 'Fusionar', t: '8 · Merge pull request', e: 'GitHub crea el <b>commit de fusión M</b> en main con los cambios de la rama. La issue #12 se cierra sola y la rama se puede borrar.', f: () => { remote.merge('12-login', 'M', 'Merge pull request #13'); view && view.pulse(1, 'M', '#8E5BD6'); remote.del('12-login'); gh.pr = 'merged'; gh.issue = 'closed'; gh.ev.push(['Ana', 'fusiona la pull request <b>#13</b> y borra la rama']); gh.ev.push(['GitHub', 'cierra la issue <b>#12</b>']); } },
+  { k: 'Sincronizar', t: '9 · Actualizar main local', e: 'De vuelta en su ordenador, Ana cambia a main y hace <b>git pull</b>: llegan E y M. Borra la rama local y queda lista para la siguiente issue.', f: () => { term.cmd('git switch main'); local.switch('main'); term.cmd('git pull'); remote.missingFrom(local, 'M').forEach(c => local.put(c)); local.refs['origin/main'] = 'M'; local.merge('origin/main', 'X', ''); term.out('Fast-forward', 'g'); term.cmd('git branch -d 12-login'); local.del('12-login'); local.del('origin/12-login'); term.out('Deleted branch 12-login'); view && view.pulse(0, 'M'); } }
+];
+function renderGH() {
+  let h = '';
+  if (gh.pr) h += `<div class="t">Pantalla de login <span style="color:#8A97B3">#13</span></div><span class="badge ${gh.pr === 'merged' ? 'b-merged' : 'b-open'}">${gh.pr === 'merged' ? 'Merged' : 'Open'}</span> <span style="font-size:14px;color:#5B6B8C;margin-left:6px"><code>main ← 12-login</code>${gh.approved ? ' · <b style="color:#2E9E6B">1 aprobación</b>' : ''}</span>`;
+  else if (gh.issue) h += `<div class="t">Pantalla de login <span style="color:#8A97B3">#12</span></div><span class="badge b-issue">Issue abierta</span>`;
+  else h += `<div class="t">GitHub</div><div style="color:#5B6B8C">Repositorio del equipo · <code>main</code> protegida</div>`;
+  if (gh.issue === 'closed') h += ` <span class="badge b-closed" style="margin-left:6px">Issue #12 cerrada</span>`;
+  h += gh.ev.slice(-5).map(([who, txt]) => `<div class="evt"><div class="av" style="background:${AV[who]}">${who[0]}</div><div class="bx"><b>${who}</b> ${txt}</div></div>`).join('');
+  $('gh').innerHTML = h;
+}
+function init() {
+  SEQ = 0; local = new Repo('ana'); remote = new Repo('gh');
+  local.commit('A', 'Primera versión'); local.commit('B', 'Estructura del proyecto');
+  Object.values(local.c).forEach(c => remote.put(c)); remote.refs.main = 'B'; local.branch('origin/main', 'B');
+  gh = { issue: false, pr: false, ev: [], approved: false }; term.clear(); term.out('# Ordenador de Ana');
+}
+function go(n, animate) {
+  const regs = () => [{ repo: local, x: 0, y: 0, w: 1200, h: 300, top: 150, laneH: 72, padR: 240, dx: 120, title: 'Ordenador de Ana', bg: '#EEF2F9' },
+  { repo: remote, x: 0, y: 315, w: 1200, h: 300, top: 150, laneH: 72, padR: 240, dx: 120, title: 'GitHub · origin', bg: '#E1EAF7', noHead: true }];
+  if (!animate || n < step) { init(); const v = view; view = null; for (let i = 1; i <= n; i++) STEPS[i].f(); view = v; if (!view) view = new GraphView($('cv'), regs(), { height: 615 }); view.regions = regs(); view.nodes = {}; view.labels = {}; view.layout(true); }
+  else { for (let i = step + 1; i <= n; i++) STEPS[i].f(); view.regions = regs(); view.layout(); }
+  step = n; renderGH();
+  $('exp').innerHTML = STEPS[n].e; $('stepLabel').textContent = STEPS[n].t;
+  $('steps').innerHTML = STEPS.map((s, i) => `<div class="s ${i === n ? 'on' : i < n ? 'done' : ''}" data-i="${i}">${s.k}</div>`).join('');
+  $('steps').querySelectorAll('.s').forEach(d => d.onclick = () => go(+d.dataset.i, +d.dataset.i === step + 1));
+  $('bPrev').disabled = n === 0; $('bNext').disabled = n === STEPS.length - 1;
+}
+async function play() { if (playing) { playing = false; $('bPlay').textContent = '▶ Reproducir'; return; } playing = true; $('bPlay').textContent = '❚❚ Pausa'; if (step === STEPS.length - 1) go(0); while (playing && step < STEPS.length - 1) { await sleep(step === 0 ? 600 : 3200); if (playing) go(step + 1, true); } playing = false; $('bPlay').textContent = '▶ Reproducir'; }
+$('bNext').onclick = () => go(step + 1, true); $('bPrev').onclick = () => go(step - 1); $('bPlay').onclick = play; $('bReset').onclick = () => { playing = false; go(0); };
+document.addEventListener('keydown', e => { if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); if (step < STEPS.length - 1) go(step + 1, true); } if (e.key === 'ArrowLeft' && step > 0) go(step - 1); });
+go(0);
+</script></body></html>
