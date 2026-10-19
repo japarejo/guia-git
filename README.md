@@ -62,3 +62,4 @@ docs/animaciones/    animaciones interactivas (publicadas con GitHub Pages)
 ```
 
 Material docente: J. A. Parejo. Licencia [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.es).
+Espero que os guste :-D
