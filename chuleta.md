@@ -20,3 +20,4 @@
 | Borrar una rama ya fusionada | `git branch -d <rama>` |
 
 **Orden habitual:** commit (una o varias veces) → push → pull request → revisión → fusión → pull.
+La chuleta está guay!
